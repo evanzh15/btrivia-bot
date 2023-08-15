@@ -64,8 +64,17 @@ async def opt(ctx, date=None):
 
     res = cur.execute("SELECT date FROM birthdate WHERE id = ?", (ctx.author.id,))
     user_bd = res.fetchone()
+    # If user is already in db, output embed message
+    if user_bd is not None:
+        dt_ts = datetime.fromtimestamp(user_bd[0], tz=timezone.utc)
+        embed = discord.Embed(
+            title="Rut-roh!".format(fname=ctx.author),
+            description="""You're already in the database! Your given birthdate is: {birthdate}. So, just sit back, relax, and wait for the trivia :). If you want to opt-out, please use $deopt.""".format(birthdate=datetime.strftime(dt_ts, "%B %d, %Y")),
+            colour=discord.Colour.blurple()
+        )
+        await ctx.send(embed=embed)
     # Check if user is in db, if not in db, insert (ID, Birthdate, Score: 0)
-    if user_bd is None:
+    else:
         try:
             dt_date = datetime.strptime(date,
                                         '%m-%d-%Y')  # Try to convert string to datetime object, else throw ValueError
@@ -80,14 +89,31 @@ async def opt(ctx, date=None):
             con.commit()
             await ctx.send(embed=embed)
         except ValueError:  # User did not enter a valid date, e.g. 02-30-2000, 2-30-200
-            await ctx.send("ValueError: Please enter your birthdate using the format MM-DD-YYYY!")
+            embed = discord.Embed(
+                title="Rut-roh!".format(fname=ctx.author),
+                description="Please enter your birthdate using the format MM-DD-YYYY!",
+                colour=discord.Colour.blurple()
+            )
+            await ctx.send(embed=embed)
         return
-    # If user is already in db, output embed message
+
+
+@bot.command()
+async def deopt(ctx):
+    res = cur.execute("SELECT EXISTS(SELECT * FROM birthdate WHERE id = ?)", (ctx.author.id,))
+    if res.fetchone()[0]:
+        cur.execute("DELETE FROM birthdate WHERE id = ?", (ctx.author.id,))
+        con.commit()
+        embed = discord.Embed(
+            title=":(".format(fname=ctx.author),
+            description="Sorry to see you go, {author}! I hope you had a fun time with our trivia!".format(author=ctx.author.name),
+            colour=discord.Colour.blurple()
+        )
+        await ctx.send(embed=embed)
     else:
-        dt_ts = datetime.fromtimestamp(user_bd[0], tz=timezone.utc)
         embed = discord.Embed(
             title="Rut-roh!".format(fname=ctx.author),
-            description="""You're already in the database! Your given birthdate is: {birthdate}. So, just sit back, relax, and wait for the trivia :). If you want to opt-out, please use the $(COMMAND NAME) (PARAMETER).""".format(birthdate=datetime.strftime(dt_ts, "%B %d, %Y")),
+            description="Sorry, I don't know who you are! You're not in our systems, but if you would want to opt-in, please use $opt {MM-DD-YYYY} where MM-DD-YYYY is your birthday.",
             colour=discord.Colour.blurple()
         )
         await ctx.send(embed=embed)
