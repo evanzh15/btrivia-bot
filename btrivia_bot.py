@@ -4,7 +4,7 @@ import sqlite3
 import os
 from discord.ext import commands
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timezone
 
 # load .env file, and obtain token
 load_dotenv()
@@ -45,17 +45,40 @@ async def on_ready():
 
 @bot.command()
 async def test(ctx):
-    await ctx.send("HOLA GUEY")
+    res = cur.execute("SELECT * FROM birthdate")
+    await ctx.send(res.fetchall())
+
 
 @bot.command()
 async def opt(ctx, date=None):
-    #newdate = datetime.strptime(date, '%m-%d-%Y')
-    #print(int(newdate.strftime("%j")))
-    embed = discord.Embed(
-        title="Welcome {fname}!".format(fname = ctx.author),
-        description="""Command: $opt \"MM-DD-YYY\"\n Description: You have the option to store your birthday in our system! Simply share your birthdate using the format MM-DD-YYYY (for example, \"08-08-2001\"). Once confirmed, your birthdate will be linked with your Discord ID, so we can add your special day to our set of trivia questions!""",
-        colour=discord.Colour.blurple()
-    )
-    await ctx.send(embed=embed)
+    # If first parameter remains not present
+    if date is None:
+        embed = discord.Embed(
+            title="Welcome {fname}!".format(fname=ctx.author),
+            description="""Command: $opt \"MM-DD-YYY\"\n Description: You have the option to store your birthday in our system! Simply share your birthdate using the format MM-DD-YYYY (for example, \"08-08-2001\"). Once confirmed, your birthdate will be linked with your Discord ID, so we can add your special day to our set of trivia questions!""",
+            colour=discord.Colour.blurple()
+        )
+        await ctx.send(embed=embed)
+        return
+    # If first parameter is present:
+    try:
+        dt_date = datetime.strptime(date, '%m-%d-%Y')  # Try to convert string to datetime object, else throw ValueError
+        f_date = datetime.strftime(dt_date, '%B %d, %Y')  # Format datetime object into string
+        embed = discord.Embed(
+            title="Welcome {fname}!".format(fname=ctx.author),
+            description="Thank you for opting in! You entered your date of birth as: {dob}".format(dob=f_date),
+            colour=discord.Colour.blurple()
+        )
+        await ctx.send(embed=embed)
+    except ValueError:  # User did not enter a valid date, e.g. 02-30-2000, 2-30-200
+        await ctx.send("ValueError: Please enter your birthdate using the format MM-DD-YYYY!")
+        return
+    # If first parameter is present AND userID is not already in DB
+    # try:
+    data = [ctx.author, dt_date.replace(tzinfo=timezone.utc).timestamp(), "0"]
+    cur.execute("INSERT INTO birthdate VALUES(?,?,?)", (data,))
+    con.commit()
+    # except:
+    #     await ctx.send("Error: ")
 
 bot.run(TOKEN)
