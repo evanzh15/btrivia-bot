@@ -18,6 +18,7 @@ cur = con.cursor()
 intents = discord.Intents.default()
 intents.message_content = True
 
+# Sets delimiter to '$', and declares default intents
 bot = commands.Bot(command_prefix='$', intents=intents)
 
 
@@ -28,7 +29,7 @@ async def on_ready():
     if res.fetchone() is None:
         print("No \'bd.db\' detected, creating...")
         try:
-            cur.execute("CREATE TABLE birthdate(id, date, score)")
+            cur.execute("CREATE TABLE birthdate(id INTEGER PRIMARY KEY, date INTEGER NOT NULL, score INTEGER NOT NULL)")
             print("Successfully created \'bd.db\'!")
         except:
             print("Error in creating \'bd.db\'.")
@@ -60,25 +61,35 @@ async def opt(ctx, date=None):
         )
         await ctx.send(embed=embed)
         return
-    # If first parameter is present:
-    try:
-        dt_date = datetime.strptime(date, '%m-%d-%Y')  # Try to convert string to datetime object, else throw ValueError
-        f_date = datetime.strftime(dt_date, '%B %d, %Y')  # Format datetime object into string
+
+    res = cur.execute("SELECT date FROM birthdate WHERE id = ?", (ctx.author.id,))
+    user_bd = res.fetchone()
+    # Check if user is in db, if not in db, insert (ID, Birthdate, Score: 0)
+    if user_bd is None:
+        try:
+            dt_date = datetime.strptime(date,
+                                        '%m-%d-%Y')  # Try to convert string to datetime object, else throw ValueError
+            f_date = datetime.strftime(dt_date, '%B %d, %Y')  # Format datetime object into string
+            embed = discord.Embed(
+                title="Welcome {fname}!".format(fname=ctx.author),
+                description="Thank you for opting in! You entered your date of birth as: {dob}".format(dob=f_date),
+                colour=discord.Colour.blurple()
+            )
+            cur.execute("INSERT INTO birthdate (id, date, score) VALUES(?,?,?)",
+                        (ctx.author.id, dt_date.replace(tzinfo=timezone.utc).timestamp(), 0))
+            con.commit()
+            await ctx.send(embed=embed)
+        except ValueError:  # User did not enter a valid date, e.g. 02-30-2000, 2-30-200
+            await ctx.send("ValueError: Please enter your birthdate using the format MM-DD-YYYY!")
+        return
+    # If user is already in db, output embed message
+    else:
+        dt_ts = datetime.fromtimestamp(user_bd[0], tz=timezone.utc)
         embed = discord.Embed(
-            title="Welcome {fname}!".format(fname=ctx.author),
-            description="Thank you for opting in! You entered your date of birth as: {dob}".format(dob=f_date),
+            title="Rut-roh!".format(fname=ctx.author),
+            description="""You're already in the database! Your given birthdate is: {birthdate}. So, just sit back, relax, and wait for the trivia :). If you want to opt-out, please use the $(COMMAND NAME) (PARAMETER).""".format(birthdate=datetime.strftime(dt_ts, "%B %d, %Y")),
             colour=discord.Colour.blurple()
         )
         await ctx.send(embed=embed)
-    except ValueError:  # User did not enter a valid date, e.g. 02-30-2000, 2-30-200
-        await ctx.send("ValueError: Please enter your birthdate using the format MM-DD-YYYY!")
-        return
-    # If first parameter is present AND userID is not already in DB
-    # try:
-    data = [ctx.author, dt_date.replace(tzinfo=timezone.utc).timestamp(), "0"]
-    cur.execute("INSERT INTO birthdate VALUES(?,?,?)", (data,))
-    con.commit()
-    # except:
-    #     await ctx.send("Error: ")
 
 bot.run(TOKEN)
