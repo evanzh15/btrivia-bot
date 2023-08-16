@@ -2,7 +2,7 @@
 import discord
 import sqlite3
 import os
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 
@@ -17,13 +17,20 @@ cur = con.cursor()
 # Declare
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
 
 # Sets delimiter to '$', and declares default intents
 bot = commands.Bot(command_prefix='$', intents=intents)
 
+desired_time = datetime.today().replace(hour=3, minute=0, second=0, microsecond=0)
+trivia_questions = ["Whose birthday is on {birthdate}?",
+                    "Who celebrates their birthday on {birthdate}?"]
 
 @bot.event
 async def on_ready():
+
+    #background_loop.start()
+
     print(f'We have logged in as {bot.user}')
     res = cur.execute("SELECT name FROM sqlite_master")
     if res.fetchone() is None:
@@ -34,15 +41,10 @@ async def on_ready():
         except:
             print("Error in creating \'bd.db\'.")
 
-
-# @bot.event
-# async def on_message(message):
-#     if message.author == bot.user:
-#         return
-#
-#     if message.content.startswith('$hello'):
-#         await message.channel.send('Hola guey!')
-
+@bot.event
+async def on_guild_join(guild):
+    # ***** Create a check to see if the channel already exists or not. *****
+    await guild.create_text_channel('birthday-trivia')
 
 @bot.command()
 async def test(ctx):
@@ -109,7 +111,7 @@ async def deopt(ctx):
             description="Sorry to see you go, {author}! I hope you had a fun time with our trivia!".format(author=ctx.author.name),
             colour=discord.Colour.blurple()
         )
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, )
     else:
         embed = discord.Embed(
             title="Rut-roh!".format(fname=ctx.author),
@@ -117,5 +119,20 @@ async def deopt(ctx):
             colour=discord.Colour.blurple()
         )
         await ctx.send(embed=embed)
+
+# @tasks.loop(minutes=1)
+# async def background_loop():
+#     curr_time = datetime.today().replace(second=0, microsecond=0)
+#     if curr_time.time() == desired_time.time():
+#         birthdate()
+#
+# @bot.command()
+# async def birthdate(ctx):
+
+@bot.command()
+async def text_channel(ctx):
+    guild = ctx.guild
+    channel = discord.utils.get(guild.channels, name="birthday-trivia", type=discord.ChannelType.text)
+    await channel.send("hola :)")
 
 bot.run(TOKEN)
