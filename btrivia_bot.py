@@ -318,11 +318,30 @@ class Button(discord.ui.View):
         await self.message.edit(view=None)
 
 
-async def get_page(page):
+async def get_page_score(page):
     offset = page * 10
     result = cur.execute(
         "SELECT id, score FROM birthdate ORDER BY score DESC LIMIT 10 OFFSET {offset}".format(offset=offset))
     score_board = result.fetchall()
+
+    page_desc = ""
+    for i, tup in enumerate(score_board):
+        if bot.get_user(tup[0]) is None:
+            page_desc += str(i) + ". " + "None" + " - " + str(datetime.fromtimestamp(tup[1])) + "\n"
+        else:
+            page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + str(datetime.fromtimestamp(tup[1])) + "\n"
+    p_embed = discord.Embed(
+        title="Birthdays!",
+        description=page_desc,
+        colour=discord.Colour.blurple()
+    )
+    return p_embed
+
+async def get_page_birthday(page):
+    offset = page * 10
+    result = cur.execute(
+        "SELECT id, date FROM birthdate ORDER BY score DESC LIMIT 10 OFFSET {offset}".format(offset=offset))
+    bd_list = result.fetchall()
     page_desc = ""
     for i, tup in enumerate(score_board):
         if bot.get_user(tup[0]) is None:
@@ -344,5 +363,11 @@ async def scoreboard(ctx):
     pagination_view = Button(get_page, max_pages)
     await pagination_view.send(ctx)
 
+@bot.command()
+async def bithdays(ctx):
+    res = cur.execute("SELECT COUNT(*) FROM birthdate")
+    max_pages = int(res.fetchone()[0] / 10.0)
+    pagination_view = Button(get_page, max_pages)
+    await pagination_view.send(ctx)
 
 bot.run(TOKEN)
