@@ -76,7 +76,7 @@ async def opt(ctx, date=None):
     if user_bd is not None:
         dt_ts = datetime.fromtimestamp(user_bd[0], tz=timezone.utc)
         embed = discord.Embed(
-            title="Rut-roh!".format(fname=ctx.author),
+            title="Rut-roh!",
             description="""You're already in the database! Your given birthdate is: {birthdate}. So, just sit back, relax, and wait for the trivia :). If you want to opt-out, please use $deopt.""".format(
                 birthdate=datetime.strftime(dt_ts, "%B %d, %Y")),
             colour=discord.Colour.blurple()
@@ -101,7 +101,7 @@ async def opt(ctx, date=None):
             await ctx.send(embed=embed)
         except ValueError:  # User did not enter a valid date, e.g. 02-30-2000, 2-30-200
             embed = discord.Embed(
-                title="Rut-roh!".format(fname=ctx.author),
+                title="Rut-roh!",
                 description="Please enter your birthdate using the format MM-DD-YYYY!",
                 colour=discord.Colour.blurple()
             )
@@ -130,7 +130,7 @@ async def deopt(ctx):
     # If id does not exist, deny and offer $opt
     else:
         embed = discord.Embed(
-            title="Rut-roh!".format(fname=ctx.author),
+            title="Rut-roh!",
             description="Sorry, I don't know who you are! You're not in our systems, but if you would want to opt-in, please use $opt {MM-DD-YYYY} where MM-DD-YYYY is your birthday.",
             colour=discord.Colour.blurple()
         )
@@ -166,18 +166,27 @@ class Birthday_Loop(commands.Cog):
 
 
 async def birthdate():
+    # Obtain guild information since there is no ctx for this function, and search for "birthday-trivia" channel
+    # Send random trivia_question
+    guild = bot.get_guild(int(GUILD))
+    channel = discord.utils.get(guild.channels, name="birthday-trivia", type=discord.ChannelType.text)
+
     # Obtain a random birthdate from DB and fetch it.
     res = cur.execute("SELECT * FROM birthdate ORDER BY RANDOM() LIMIT 1")
+
+    if res.fetchone() is None:
+        warn_embed = discord.Embed(
+            title="Rut-roh!",
+            description="There are no birthdates in our database... You should fix that :)",
+            colour=discord.Colour.blurple()
+        )
+        await channel.send(embed=warn_embed)
+        return
     subject = res.fetchall()[0]
 
     # Obtain User and datetime object pertaining to subject
     user = bot.get_user(subject[0])
     user_bd = datetime.fromtimestamp(subject[1], tz=timezone.utc)
-
-    # Obtain guild information since there is no ctx for this function, and search for "birthday-trivia" channel
-    # Send random trivia_question
-    guild = bot.get_guild(int(GUILD))
-    channel = discord.utils.get(guild.channels, name="birthday-trivia", type=discord.ChannelType.text)
 
     # Create text-channel in case of deletion or on_guild_join() malfunctions
     if channel is None:
