@@ -4,7 +4,9 @@ import sqlite3
 import os
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
+import datetime as dt
 from datetime import datetime, timezone
+import random
 
 # load .env file, and obtain token
 load_dotenv()
@@ -25,15 +27,15 @@ intents.members = True
 bot = commands.Bot(command_prefix='$', intents=intents)
 
 # Set desired time to run birthdate()
-desired_time = datetime.today().replace(hour=18, minute=29, second=0, microsecond=0)
+desired_time = datetime.today().replace(hour=15, minute=0, second=0, microsecond=0)
 trivia_questions = ["Whose birthday is on {birthdate}?",
                     "Who celebrates their birthday on {birthdate}?"]
 
 
 @bot.event
 async def on_ready():
-    if not background_loop.is_running():
-        background_loop.start()
+    if "Birthday_Loop" not in bot.cogs:
+        await bot.add_cog(Birthday_Loop(bot))
 
     print(f'We have logged in as {bot.user}')
     res = cur.execute("SELECT name FROM sqlite_master")
@@ -135,11 +137,32 @@ async def deopt(ctx):
         await ctx.send(embed=embed)
 
 
-@tasks.loop(minutes=1)
-async def background_loop():
-    curr_time = datetime.today().replace(second=0, microsecond=0)
-    if curr_time.time() == desired_time.time():
-        await birthdate()
+class Birthday_Loop(commands.Cog):
+    __INIT_TIME = dt.time(hour=10)
+    __MIDNIGHT_TIME = dt.time()
+
+    def __init__(self, b):
+        self.bot = b
+        self.has_run_today = False
+        self.time = Birthday_Loop.__INIT_TIME
+        self.loop.start()
+
+    @tasks.loop(minutes=1)
+    async def loop(self):
+        # print(datetime.now().time().hour, datetime.now().time().minute,
+        #       Birthday_Loop.__MIDNIGHT_TIME.hour, Birthday_Loop.__MIDNIGHT_TIME.minute)
+        if not self.has_run_today and datetime.now().time() >= self.time:
+            await birthdate()
+            self.has_run_today = True
+        if self.has_run_today and datetime.now().time().hour == Birthday_Loop.__MIDNIGHT_TIME.hour \
+                and datetime.now().time().minute == Birthday_Loop.__MIDNIGHT_TIME.minute:
+            await self.generate_times()
+
+    async def generate_times(self):
+        lower_cutoff, upper_cutoff = 9, 21
+        self.time = dt.time(hour=random.randint(lower_cutoff, upper_cutoff))
+        self.has_run_today = False
+        print(self.time)
 
 
 async def birthdate():
@@ -308,7 +331,7 @@ async def get_page(page):
 @bot.command()
 async def scoreboard(ctx):
     res = cur.execute("SELECT COUNT(*) FROM birthdate")
-    max_pages = int(res.fetchone()[0]/10.0)
+    max_pages = int(res.fetchone()[0] / 10.0)
     pagination_view = Button(get_page, max_pages)
     await pagination_view.send(ctx)
 
