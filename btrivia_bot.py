@@ -335,7 +335,7 @@ async def get_page_score(page):
         else:
             page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + str(tup[1]) + "\n"
     p_embed = discord.Embed(
-        title="Birthdays!",
+        title="Scoreboard!",
         description=page_desc,
         colour=discord.Colour.blurple()
     )
@@ -353,7 +353,7 @@ async def get_page_birthday(page):
         else:
             page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + datetime.strftime(datetime.utcfromtimestamp(tup[1]), "%B %d, %Y") + "\n"
     p_embed = discord.Embed(
-        title="Scoreboard!",
+        title="Birthdays!",
         description=page_desc,
         colour=discord.Colour.blurple()
     )
