@@ -363,14 +363,19 @@ async def get_page_birthday(page):
 @bot.command()
 async def scoreboard(ctx):
     res = cur.execute("SELECT COUNT(*) FROM birthdate")
-    max_pages = int(res.fetchone()[0] / 10.0)
+    max_pages = int(round(res.fetchone()[0] / 10.0)) - 1
+    if max_pages < 0:
+        max_pages = 0
     pagination_view = Button(get_page_score, max_pages)
     await pagination_view.send(ctx)
+
 
 @bot.command()
 async def birthdays(ctx):
     res = cur.execute("SELECT COUNT(*) FROM birthdate")
-    max_pages = int(res.fetchone()[0] / 10.0)
+    max_pages = int(round(res.fetchone()[0] / 10.0)) - 1
+    if max_pages < 0:
+        max_pages = 0
     pagination_view = Button(get_page_birthday, max_pages)
     await pagination_view.send(ctx)
 
