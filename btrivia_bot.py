@@ -145,6 +145,7 @@ class Birthday_Loop(commands.Cog):
         self.bot = b
         self.has_run_today = False
         self.time = Birthday_Loop.__INIT_TIME
+        self.begin_check = False
         self.loop.start()
 
     @tasks.loop(minutes=1)
@@ -152,10 +153,13 @@ class Birthday_Loop(commands.Cog):
         # print(datetime.now().time().hour, datetime.now().time().minute,
         #       Birthday_Loop.__MIDNIGHT_TIME.hour, Birthday_Loop.__MIDNIGHT_TIME.minute)
         if not self.has_run_today and datetime.now().time() >= self.time:
-            await birthdate()
-            self.has_run_today = True
-        if self.has_run_today and datetime.now().time().hour == Birthday_Loop.__MIDNIGHT_TIME.hour \
-                and datetime.now().time().minute == Birthday_Loop.__MIDNIGHT_TIME.minute:
+            if not self.begin_check:
+                self.begin_check = True
+            else:
+                await birthdate()
+                self.has_run_today = True
+        if (self.has_run_today and datetime.now().time().hour == Birthday_Loop.__MIDNIGHT_TIME.hour
+                and datetime.now().time().minute == Birthday_Loop.__MIDNIGHT_TIME.minute):
             await self.generate_times()
 
     async def generate_times(self):
@@ -173,8 +177,9 @@ async def birthdate():
 
     # Obtain a random birthdate from DB and fetch it.
     res = cur.execute("SELECT * FROM birthdate ORDER BY RANDOM() LIMIT 1")
+    subject = res.fetchone()
 
-    if res.fetchone() is None:
+    if subject is None:
         warn_embed = discord.Embed(
             title="Rut-roh!",
             description="There are no birthdates in our database... You should fix that :)",
@@ -182,7 +187,6 @@ async def birthdate():
         )
         await channel.send(embed=warn_embed)
         return
-    subject = res.fetchall()[0]
 
     # Obtain User and datetime object pertaining to subject
     user = bot.get_user(subject[0])
@@ -327,9 +331,9 @@ async def get_page_score(page):
     page_desc = ""
     for i, tup in enumerate(score_board):
         if bot.get_user(tup[0]) is None:
-            page_desc += str(i) + ". " + "None" + " - " + str(datetime.fromtimestamp(tup[1])) + "\n"
+            page_desc += str(i) + ". " + "None" + " - " + str(tup[1]) + "\n"
         else:
-            page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + str(datetime.fromtimestamp(tup[1])) + "\n"
+            page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + str(tup[1]) + "\n"
     p_embed = discord.Embed(
         title="Birthdays!",
         description=page_desc,
@@ -340,14 +344,14 @@ async def get_page_score(page):
 async def get_page_birthday(page):
     offset = page * 10
     result = cur.execute(
-        "SELECT id, date FROM birthdate ORDER BY score DESC LIMIT 10 OFFSET {offset}".format(offset=offset))
+        "SELECT id, date FROM birthdate ORDER BY date ASC LIMIT 10 OFFSET {offset}".format(offset=offset))
     bd_list = result.fetchall()
     page_desc = ""
-    for i, tup in enumerate(score_board):
+    for i, tup in enumerate(bd_list):
         if bot.get_user(tup[0]) is None:
-            page_desc += str(i) + ". " + "None" + " - " + str(tup[1]) + "\n"
+            page_desc += str(i) + ". " + "None" + " - " + datetime.strftime(datetime.utcfromtimestamp(tup[1]), "%B %d, %Y") + "\n"
         else:
-            page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + str(tup[1]) + "\n"
+            page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + datetime.strftime(datetime.utcfromtimestamp(tup[1]), "%B %d, %Y") + "\n"
     p_embed = discord.Embed(
         title="Scoreboard!",
         description=page_desc,
@@ -360,14 +364,14 @@ async def get_page_birthday(page):
 async def scoreboard(ctx):
     res = cur.execute("SELECT COUNT(*) FROM birthdate")
     max_pages = int(res.fetchone()[0] / 10.0)
-    pagination_view = Button(get_page, max_pages)
+    pagination_view = Button(get_page_score, max_pages)
     await pagination_view.send(ctx)
 
 @bot.command()
-async def bithdays(ctx):
+async def birthdays(ctx):
     res = cur.execute("SELECT COUNT(*) FROM birthdate")
     max_pages = int(res.fetchone()[0] / 10.0)
-    pagination_view = Button(get_page, max_pages)
+    pagination_view = Button(get_page_birthday, max_pages)
     await pagination_view.send(ctx)
 
 bot.run(TOKEN)
