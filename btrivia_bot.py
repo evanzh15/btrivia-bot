@@ -7,11 +7,12 @@ from dotenv import load_dotenv
 import datetime as dt
 from datetime import datetime, timezone
 import random
+import math
 
 # load .env file, and obtain token
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD = os.getenv("GUILD_ID")
+GUILD = os.getenv("GUILD_ID1")
 
 # Creates connection to sqlite3 database bd.db (birthdays)
 con = sqlite3.connect('bd.db')
@@ -26,8 +27,6 @@ intents.members = True
 # Sets delimiter to '$', and declares default intents
 bot = commands.Bot(command_prefix='$', intents=intents)
 
-# Set desired time to run birthdate()
-desired_time = datetime.today().replace(hour=15, minute=0, second=0, microsecond=0)
 trivia_questions = ["Whose birthday is on {birthdate}?",
                     "Who celebrates their birthday on {birthdate}?"]
 
@@ -43,8 +42,9 @@ async def on_ready():
         print("No \'bd.db\' detected, creating...")
         try:
             cur.execute("CREATE TABLE birthdate(id INTEGER PRIMARY KEY, date INTEGER NOT NULL, score INTEGER NOT NULL)")
+            cur.execute("CREATE TABLE calendar(date INTEGER PRIMARY KEY, done INTEGER NOT NULL)")
             print("Successfully created \'bd.db\'!")
-        except:
+        except sqlite3.OperationalError:
             print("Error in creating \'bd.db\'.")
 
 
@@ -61,8 +61,11 @@ async def opt(ctx, date=None):
     # If first parameter remains not present
     if date is None:
         embed = discord.Embed(
-            title="Welcome {fname}!".format(fname=ctx.author),
-            description="""Command: $opt \"MM-DD-YYY\"\n Description: You have the option to store your birthday in our system! Simply share your birthdate using the format MM-DD-YYYY (for example, \"08-08-2001\"). Once confirmed, your birthdate will be linked with your Discord ID, so we can add your special day to our set of trivia questions!""",
+            title=f"Welcome {ctx.author}!",
+            description="""Command: $opt \"MM-DD-YYY\"\n Description: You have the option to store your birthday in our 
+            system! Simply share your birthdate using the format MM-DD-YYYY (for example, \"08-08-2001\"). Once 
+            confirmed, your birthdate will be linked with your Discord ID, so we can add your special day to our set of 
+            trivia questions!""",
             colour=discord.Colour.blurple()
         )
         await ctx.send(embed=embed)
@@ -77,7 +80,8 @@ async def opt(ctx, date=None):
         dt_ts = datetime.fromtimestamp(user_bd[0], tz=timezone.utc)
         embed = discord.Embed(
             title="Rut-roh!",
-            description="""You're already in the database! Your given birthdate is: {birthdate}. So, just sit back, relax, and wait for the trivia :). If you want to opt-out, please use $deopt.""".format(
+            description="""You're already in the database! Your given birthdate is: {birthdate}. So, just sit back, 
+            relax, and wait for the trivia :). If you want to opt-out, please use $deopt.""".format(
                 birthdate=datetime.strftime(dt_ts, "%B %d, %Y")),
             colour=discord.Colour.blurple()
         )
@@ -89,7 +93,7 @@ async def opt(ctx, date=None):
                                         '%m-%d-%Y')  # Try to convert string to datetime object, else throw ValueError
             f_date = datetime.strftime(dt_date, '%B %d, %Y')  # Format datetime object into string
             embed = discord.Embed(
-                title="Welcome {fname}!".format(fname=ctx.author),
+                title=f"Welcome {ctx.author}!",
                 description="Thank you for opting in! You entered your date of birth as: {dob}".format(dob=f_date),
                 colour=discord.Colour.blurple()
             )
@@ -131,42 +135,11 @@ async def deopt(ctx):
     else:
         embed = discord.Embed(
             title="Rut-roh!",
-            description="Sorry, I don't know who you are! You're not in our systems, but if you would want to opt-in, please use $opt {MM-DD-YYYY} where MM-DD-YYYY is your birthday.",
+            description="""Sorry, I don't know who you are! You're not in our systems, but if you would want to opt-in, 
+                        please use $opt {MM-DD-YYYY} where MM-DD-YYYY is your birthday.""",
             colour=discord.Colour.blurple()
         )
         await ctx.send(embed=embed)
-
-
-class Birthday_Loop(commands.Cog):
-    __INIT_TIME = dt.time(hour=10)
-    __MIDNIGHT_TIME = dt.time()
-
-    def __init__(self, b):
-        self.bot = b
-        self.has_run_today = False
-        self.time = Birthday_Loop.__INIT_TIME
-        self.begin_check = False
-        self.loop.start()
-
-    @tasks.loop(minutes=1)
-    async def loop(self):
-        # print(datetime.now().time().hour, datetime.now().time().minute,
-        #       Birthday_Loop.__MIDNIGHT_TIME.hour, Birthday_Loop.__MIDNIGHT_TIME.minute)
-        if not self.has_run_today and datetime.now().time() >= self.time:
-            if not self.begin_check:
-                self.begin_check = True
-            else:
-                await birthdate()
-                self.has_run_today = True
-        if (self.has_run_today and datetime.now().time().hour == Birthday_Loop.__MIDNIGHT_TIME.hour
-                and datetime.now().time().minute == Birthday_Loop.__MIDNIGHT_TIME.minute):
-            await self.generate_times()
-
-    async def generate_times(self):
-        lower_cutoff, upper_cutoff = 9, 21
-        self.time = dt.time(hour=random.randint(lower_cutoff, upper_cutoff))
-        self.has_run_today = False
-        print(self.time)
 
 
 async def birthdate():
@@ -182,7 +155,7 @@ async def birthdate():
     if subject is None:
         warn_embed = discord.Embed(
             title="Rut-roh!",
-            description="There are no birthdates in our database... You should fix that :)",
+            description="There are no birthdays in our database... You should fix that :)",
             colour=discord.Colour.blurple()
         )
         await channel.send(embed=warn_embed)
@@ -192,17 +165,18 @@ async def birthdate():
     user = bot.get_user(subject[0])
     user_bd = datetime.fromtimestamp(subject[1], tz=timezone.utc)
 
+    # Obtain list of all users who share the same birthdate
+    res = cur.execute(f"SELECT id FROM birthdate WHERE date = {subject[1]}")
+    shared_bdays = list(res.fetchall())
+
     # Create text-channel in case of deletion or on_guild_join() malfunctions
     if channel is None:
         await guild.create_text_channel("birthday-trivia")
-
     q_embed = discord.Embed(
         title="Attention trivia-heads!",
-        description=trivia_questions[0].format(birthdate=datetime.strftime(user_bd, '%B %d, %Y'))
+        description=trivia_questions[random.randint(0, 1)].format(birthdate=datetime.strftime(user_bd, '%B %d, %Y'))
     )
-
     role = discord.utils.get(guild.roles, name="trivia-heads")
-
     await channel.send(role.mention)
     await channel.send(embed=q_embed)
 
@@ -214,11 +188,10 @@ async def birthdate():
     mentioned_users = {}
     try:
         for _ in range(10):
-            message = await bot.wait_for("message", check=check, timeout=10)
+            message = await bot.wait_for("message", check=check, timeout=20)
 
             # Only allows for one response per member, and a maximum of 10 responses.
             if message.author.id not in mentioned_users:
-                # print(message.author, "not in dict.")
                 mentioned_users[message.author.id] = message.mentions[0]
                 await message.add_reaction('\N{THUMBS UP SIGN}')
             else:
@@ -227,7 +200,16 @@ async def birthdate():
                                                         colour=discord.Colour.dark_red()))
     except asyncio.TimeoutError:
         if len(mentioned_users) == 0:
-            await channel.send("No responses :(. The correct answer was <@{user}>!".format(user=user.id))
+            if len(shared_bdays) == 1:
+                await channel.send("No responses :(. The correct answer was <@{user}>!".format(user=user.id))
+            else:
+                all_results = ""
+                for user in shared_bdays:
+                    if user == shared_bdays[-1]:
+                        all_results += "and <@" + str(user) + ">"
+                    else:
+                        all_results += "<@" + str(user) + ">, "
+                await channel.send("No responses :(. The correct answers were " + all_results)
             return
         await channel.send("Time's up!")
 
@@ -235,7 +217,7 @@ async def birthdate():
 
     # Only correct responses are put into consideration
     for author_id in mentioned_users:
-        if mentioned_users[author_id].id == user.id:
+        if mentioned_users[author_id].id in shared_bdays:
             embed_info += [str(author_id)]
 
     desc = "The correct answer was <@{user}>!\n".format(user=user.id)
@@ -245,7 +227,8 @@ async def birthdate():
         res = cur.execute("SELECT score FROM birthdate WHERE id = {identity}".format(identity=author_id))
         user_score = res.fetchone()[0]
         if i == 0:
-            desc += "1st Place: <@" + author_id + "> \N{Face with Party Horn and Party Hat} \N{Heavy Plus Sign}\U00000035 \n"
+            desc += ("1st Place: <@" + author_id +
+                     "> \N{Face with Party Horn and Party Hat} \N{Heavy Plus Sign}\U00000035 \n")
             user_score += 5
         elif i == 1:
             desc += "2nd Place: <@" + author_id + "> \N{Party Popper} \N{Heavy Plus Sign}\U00000033 \n"
@@ -268,6 +251,120 @@ async def birthdate():
         color=discord.Colour.dark_magenta()
     )
     await channel.send(embed=embed)
+
+
+async def get_page_score(page):
+    offset = page * 10
+    result = cur.execute(
+        "SELECT id, score FROM birthdate ORDER BY score DESC LIMIT 10 OFFSET {offset}".format(offset=offset))
+    score_board = result.fetchall()
+
+    page_desc = ""
+    for i, tup in enumerate(score_board):
+        if bot.get_user(tup[0]) is None:
+            page_desc += str(i) + ". " + "None" + " - " + str(tup[1]) + "\n"
+        else:
+            page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + str(tup[1]) + "\n"
+    p_embed = discord.Embed(
+        title="Scoreboard!",
+        description=page_desc,
+        colour=discord.Colour.blurple()
+    )
+    return p_embed
+
+
+async def get_page_birthday(page):
+    offset = page * 10
+    result = cur.execute(
+        "SELECT id, date FROM birthdate ORDER BY date ASC LIMIT 10 OFFSET {offset}".format(offset=offset))
+    bd_list = result.fetchall()
+    page_desc = ""
+    for i, tup in enumerate(bd_list):
+        if bot.get_user(tup[0]) is None:
+            page_desc += (str(i) + ". " + "None" + " - " +
+                          datetime.strftime(datetime.utcfromtimestamp(tup[1]), "%B %d, %Y") + "\n")
+        else:
+            page_desc += (str(i) + ". " + bot.get_user(tup[0]).name + " - " +
+                          datetime.strftime(datetime.utcfromtimestamp(tup[1]), "%B %d, %Y") + "\n")
+    p_embed = discord.Embed(
+        title="Birthdays!",
+        description=page_desc,
+        colour=discord.Colour.blurple()
+    )
+    return p_embed
+
+
+@bot.command()
+async def scoreboard(ctx):
+    res = cur.execute("SELECT COUNT(*) FROM birthdate")
+    max_pages = int(math.ceil(res.fetchone()[0] / 10.0)) - 1
+    print(max_pages)
+    if max_pages < 0:
+        max_pages = 0
+    pagination_view = Button(get_page_score, max_pages)
+    await pagination_view.send(ctx)
+
+
+@bot.command()
+async def birthdays(ctx):
+    res = cur.execute("SELECT COUNT(*) FROM birthdate")
+    max_pages = int(math.ceil(res.fetchone()[0] / 10.0)) - 1
+    print(max_pages)
+    if max_pages < 0:
+        max_pages = 0
+    pagination_view = Button(get_page_birthday, max_pages)
+    await pagination_view.send(ctx)
+
+
+async def daily(today_date: int):
+    cur.execute("INSERT INTO calendar (date, done) VALUES (?, ?)", (today_date, 0,))
+    con.commit()
+
+
+async def update(today_date: int):
+    cur.execute(f"UPDATE calendar SET done = 1 WHERE date = {today_date}")
+    con.commit()
+
+
+class Birthday_Loop(commands.Cog):
+    __INIT_TIME = dt.time(hour=10)
+    __MIDNIGHT_TIME = dt.time()
+
+    def __init__(self, b):
+        self.bot = b
+        self.has_run_today = False
+        self.time = Birthday_Loop.__INIT_TIME
+        self.begin_check = False
+        self.loop.start()
+
+    @tasks.loop(minutes=1)
+    async def loop(self):
+        # print(datetime.now().time().hour, datetime.now().time().minute,
+        #       Birthday_Loop.__MIDNIGHT_TIME.hour, Birthday_Loop.__MIDNIGHT_TIME.minute)
+        date = datetime.now().strftime("%m-%d-%Y")
+        dt_obj = datetime.strptime(date, "%m-%d-%Y").replace(tzinfo=timezone.utc).timestamp()
+
+        res = cur.execute("SELECT done FROM calendar WHERE date = {date}".format(date=dt_obj))
+        done = res.fetchone()[0]
+        # print(done, date, dt_obj)
+
+        if done is None:
+            print("done is None")
+            await daily(int(dt_obj))
+
+        if done == 0 and datetime.now().time() >= self.time:
+            await birthdate()
+            print("done is 0, and now() is > time")
+            await update(int(dt_obj))
+        if (done == 1 and datetime.now().time().hour == Birthday_Loop.__MIDNIGHT_TIME.hour
+                and datetime.now().time().minute == Birthday_Loop.__MIDNIGHT_TIME.minute):
+            print("done is 1, and now() is == midnight")
+            await self.generate_times()
+
+    async def generate_times(self):
+        lower_cutoff, upper_cutoff = 12, 21
+        self.time = dt.time(hour=random.randint(lower_cutoff, upper_cutoff))
+        print(self.time)
 
 
 class Button(discord.ui.View):
@@ -298,6 +395,7 @@ class Button(discord.ui.View):
         else:
             self.next_button.disabled = False
 
+    # noinspection PyUnresolvedReferences
     @discord.ui.button(label="◀️", style=discord.ButtonStyle.green)
     async def previous_button(self, interaction: discord.Interaction, button: discord.Button):
         if self.curr_page <= 0:
@@ -311,6 +409,7 @@ class Button(discord.ui.View):
         self.curr_page -= 1
         await self.update_message()
 
+    # noinspection PyUnresolvedReferences
     @discord.ui.button(label="▶️", style=discord.ButtonStyle.green)
     async def next_button(self, interaction: discord.Interaction, button: discord.Button):
         await interaction.response.defer()
@@ -321,62 +420,5 @@ class Button(discord.ui.View):
     async def on_timeout(self):
         await self.message.edit(view=None)
 
-
-async def get_page_score(page):
-    offset = page * 10
-    result = cur.execute(
-        "SELECT id, score FROM birthdate ORDER BY score DESC LIMIT 10 OFFSET {offset}".format(offset=offset))
-    score_board = result.fetchall()
-
-    page_desc = ""
-    for i, tup in enumerate(score_board):
-        if bot.get_user(tup[0]) is None:
-            page_desc += str(i) + ". " + "None" + " - " + str(tup[1]) + "\n"
-        else:
-            page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + str(tup[1]) + "\n"
-    p_embed = discord.Embed(
-        title="Scoreboard!",
-        description=page_desc,
-        colour=discord.Colour.blurple()
-    )
-    return p_embed
-
-async def get_page_birthday(page):
-    offset = page * 10
-    result = cur.execute(
-        "SELECT id, date FROM birthdate ORDER BY date ASC LIMIT 10 OFFSET {offset}".format(offset=offset))
-    bd_list = result.fetchall()
-    page_desc = ""
-    for i, tup in enumerate(bd_list):
-        if bot.get_user(tup[0]) is None:
-            page_desc += str(i) + ". " + "None" + " - " + datetime.strftime(datetime.utcfromtimestamp(tup[1]), "%B %d, %Y") + "\n"
-        else:
-            page_desc += str(i) + ". " + bot.get_user(tup[0]).name + " - " + datetime.strftime(datetime.utcfromtimestamp(tup[1]), "%B %d, %Y") + "\n"
-    p_embed = discord.Embed(
-        title="Birthdays!",
-        description=page_desc,
-        colour=discord.Colour.blurple()
-    )
-    return p_embed
-
-
-@bot.command()
-async def scoreboard(ctx):
-    res = cur.execute("SELECT COUNT(*) FROM birthdate")
-    max_pages = int(round(res.fetchone()[0] / 10.0)) - 1
-    if max_pages < 0:
-        max_pages = 0
-    pagination_view = Button(get_page_score, max_pages)
-    await pagination_view.send(ctx)
-
-
-@bot.command()
-async def birthdays(ctx):
-    res = cur.execute("SELECT COUNT(*) FROM birthdate")
-    max_pages = int(round(res.fetchone()[0] / 10.0)) - 1
-    if max_pages < 0:
-        max_pages = 0
-    pagination_view = Button(get_page_birthday, max_pages)
-    await pagination_view.send(ctx)
 
 bot.run(TOKEN)
