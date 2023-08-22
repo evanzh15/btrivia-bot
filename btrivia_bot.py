@@ -12,7 +12,7 @@ import math
 # load .env file, and obtain token
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD = os.getenv("GUILD_ID1")
+GUILD = os.getenv("GUILD_ID")
 
 # Creates connection to sqlite3 database bd.db (birthdays)
 con = sqlite3.connect('bd.db')
