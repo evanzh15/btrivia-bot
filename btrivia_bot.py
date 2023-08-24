@@ -37,15 +37,10 @@ async def on_ready():
         await bot.add_cog(Birthday_Loop(bot))
 
     print(f'We have logged in as {bot.user}')
-    res = cur.execute("SELECT name FROM sqlite_master")
-    if res.fetchone() is None:
-        print("No \'bd.db\' detected, creating...")
-        try:
-            cur.execute("CREATE TABLE birthdate(id INTEGER PRIMARY KEY, date INTEGER NOT NULL, score INTEGER NOT NULL)")
-            cur.execute("CREATE TABLE calendar(date INTEGER PRIMARY KEY, done INTEGER NOT NULL)")
-            print("Successfully created \'bd.db\'!")
-        except sqlite3.OperationalError:
-            print("Error in creating \'bd.db\'.")
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS birthdate(id INTEGER PRIMARY KEY, date INTEGER NOT NULL, score INTEGER NOT NULL)")
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS calendar(date INTEGER PRIMARY KEY, done INTEGER NOT NULL, gen_date INTEGER NOT NULL)")
 
 
 @bot.event
@@ -124,8 +119,7 @@ async def deopt(ctx):
         con.commit()
         embed = discord.Embed(
             title=":(".format(fname=ctx.author),
-            description="Sorry to see you go, {author}! I hope you had a fun time with our trivia!".format(
-                author=ctx.author.name),
+            description=f"Sorry to see you go, {ctx.author.name}! I hope you had a fun time with our trivia!",
             colour=discord.Colour.blurple()
         )
         role = discord.utils.get(ctx.guild.roles, name="trivia-heads")
@@ -167,7 +161,17 @@ async def birthdate():
 
     # Obtain list of all users who share the same birthdate
     res = cur.execute(f"SELECT id FROM birthdate WHERE date = {subject[1]}")
-    shared_bdays = list(res.fetchall())
+    shared_bdays = [identity[0] for identity in res.fetchall()]
+
+    all_results = ""
+    if len(shared_bdays) == 2:
+        all_results = "<@" + str(shared_bdays[0]) + "> and <@" + str(shared_bdays[1]) + ">"
+    elif len(shared_bdays) > 2:
+        for user in shared_bdays:
+            if user == shared_bdays[-1]:
+                all_results += "and <@" + str(user) + ">"
+            else:
+                all_results += "<@" + str(user) + ">, "
 
     # Create text-channel in case of deletion or on_guild_join() malfunctions
     if channel is None:
@@ -177,8 +181,7 @@ async def birthdate():
         description=trivia_questions[random.randint(0, 1)].format(birthdate=datetime.strftime(user_bd, '%B %d, %Y'))
     )
     role = discord.utils.get(guild.roles, name="trivia-heads")
-    await channel.send(role.mention)
-    await channel.send(embed=q_embed)
+    await channel.send(role.mention, embed=q_embed)
 
     # Check function to determine what message is allowed as input: Must be in "birthday-trivia", messages cannot be
     # from Birthday Bot, and there can only be one mention within responses.
@@ -203,12 +206,6 @@ async def birthdate():
             if len(shared_bdays) == 1:
                 await channel.send("No responses :(. The correct answer was <@{user}>!".format(user=user.id))
             else:
-                all_results = ""
-                for user in shared_bdays:
-                    if user == shared_bdays[-1]:
-                        all_results += "and <@" + str(user) + ">"
-                    else:
-                        all_results += "<@" + str(user) + ">, "
                 await channel.send("No responses :(. The correct answers were " + all_results)
             return
         await channel.send("Time's up!")
@@ -227,8 +224,7 @@ async def birthdate():
         res = cur.execute("SELECT score FROM birthdate WHERE id = {identity}".format(identity=author_id))
         user_score = res.fetchone()[0]
         if i == 0:
-            desc += ("1st Place: <@" + author_id +
-                     "> \N{Face with Party Horn and Party Hat} \N{Heavy Plus Sign}\U00000035 \n")
+            desc += "1st Place: <@" + author_id + "> \N{Face with Party Horn and Party Hat} \N{Heavy Plus Sign}\U00000035 \n"
             user_score += 5
         elif i == 1:
             desc += "2nd Place: <@" + author_id + "> \N{Party Popper} \N{Heavy Plus Sign}\U00000033 \n"
@@ -317,7 +313,7 @@ async def birthdays(ctx):
 
 
 async def daily(today_date: int):
-    cur.execute("INSERT INTO calendar (date, done) VALUES (?, ?)", (today_date, 0,))
+    cur.execute("INSERT INTO calendar (date, done, gen_date) VALUES (?, ?, ?)", (today_date, 0, 0,))
     con.commit()
 
 
@@ -328,7 +324,6 @@ async def update(today_date: int):
 
 class Birthday_Loop(commands.Cog):
     __INIT_TIME = dt.time(hour=10)
-    __MIDNIGHT_TIME = dt.time()
 
     def __init__(self, b):
         self.bot = b
@@ -344,27 +339,30 @@ class Birthday_Loop(commands.Cog):
         date = datetime.now().strftime("%m-%d-%Y")
         dt_obj = datetime.strptime(date, "%m-%d-%Y").replace(tzinfo=timezone.utc).timestamp()
 
-        res = cur.execute("SELECT done FROM calendar WHERE date = {date}".format(date=dt_obj))
-        done = res.fetchone()[0]
-        # print(done, date, dt_obj)
+        res = cur.execute(f"SELECT done, gen_date FROM calendar WHERE date = {dt_obj}")
+        res = res.fetchone()
 
-        if done is None:
+        if res is None:
             print("done is None")
             await daily(int(dt_obj))
+            return
+
+        done = res[0]
+        gen_date = res[1]
 
         if done == 0 and datetime.now().time() >= self.time:
             await birthdate()
             print("done is 0, and now() is > time")
             await update(int(dt_obj))
-        if (done == 1 and datetime.now().time().hour == Birthday_Loop.__MIDNIGHT_TIME.hour
-                and datetime.now().time().minute == Birthday_Loop.__MIDNIGHT_TIME.minute):
-            print("done is 1, and now() is == midnight")
+        if done == 1 and gen_date == 0:
+            print("done is 1, generate new times")
+            cur.execute(f"UPDATE calendar SET gen_date = 1 WHERE date = {dt_obj}")
+            con.commit()
             await self.generate_times()
 
     async def generate_times(self):
         lower_cutoff, upper_cutoff = 12, 21
         self.time = dt.time(hour=random.randint(lower_cutoff, upper_cutoff))
-        print(self.time)
 
 
 class Button(discord.ui.View):
@@ -398,13 +396,6 @@ class Button(discord.ui.View):
     # noinspection PyUnresolvedReferences
     @discord.ui.button(label="◀️", style=discord.ButtonStyle.green)
     async def previous_button(self, interaction: discord.Interaction, button: discord.Button):
-        if self.curr_page <= 0:
-            print("left arrow disabled")
-            button.disabled = True
-        else:
-            print("left arrow enabled")
-            button.disabled = False
-
         await interaction.response.defer()
         self.curr_page -= 1
         await self.update_message()
